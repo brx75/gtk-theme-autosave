@@ -1,0 +1,8 @@
+This is a script that takes a snapshot of you Gnome Appearence.
+Simply run it or add it to your crontab:
+
+Adding gtk-theme-autosave to crontab:
+  1. copy the content of crontab.example
+  2. run the command "crontab -e"
+  3. paste the content of the clipboard
+  4. save and exit

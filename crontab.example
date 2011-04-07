@@ -1,0 +1,1 @@
+*/5 * * * * $HOME/bin/gtk-theme-autosave >> $HOME/.cache/gtk-theme-autosave.log 2>&1
