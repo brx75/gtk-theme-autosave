@@ -2,10 +2,11 @@
 # Author: brx75x 
 # Contacts: find me on gmail
 
+
+
 if [ "$1" = "-d" ]; then
     DEBUG=1
 fi
-
 
 appname="gtk-theme-autosave"
 lockfile="/tmp/$appname-$USER.pid"
@@ -162,16 +163,20 @@ function debug(){
   fi
 }
 
+function messaage_date(){
+    date +"%Y/%m/%d %H:%M:%S"
+}
+
 function message(){
-    echo "$@"
+    echo "$(messaage_date):$appname:INFO:$@"
 }
 
 function error(){
-    echo "ERROR:$appname: $@" >&2
+    echo "$(messaage_date):$appname:ERROR:$@" >&2
 }
 
 function warn(){
-    echo "WARNING [$(date +%Y%m%d-%H%M%S)]:$appname: $@"
+    echo "$(messaage_date):$appname:WARNING:$@" 
 }
 
 function rotate_snapshots(){
@@ -198,7 +203,7 @@ function rotate_snapshots(){
        mkdir $themesnapdir_current 2>/dev/null
 
        date_theme=$(date -r $themesnapdir_last/index.theme +"%Y-%m-%d_%H:%M")
-       generate_gnome_metatheme $themesnapdir_last "$date_theme"
+       generate_gnome_metatheme $themesnapdir_last "current"
    fi
 }
 
@@ -206,7 +211,7 @@ function compare_snapshots(){
     debug "compare_snapshots($@)"
     for f in $themesnapdir_current/index.theme.save $themesnapdir_current/gtk-2.0 $themesnapdir_current/metacity-1 $themesnapdir_current/user.*; do
         if [ -e $f ]; then
-            diff -qr $themesnapdir_last/$(basename $f) $themesnapdir_current/$(basename $f) 
+            diff -qr $themesnapdir_last/$(basename $f) $themesnapdir_current/$(basename $f) 2>/dev/null
             ret=$?
             if [ $ret -ne 0 ]; then 
                 debug "compare_snapshots: diff -qr $themesnapdir_last/$(basename $f) $themesnapdir_current/$(basename $f)"
@@ -251,7 +256,7 @@ icontheme=$(gconftool  -g /desktop/gnome/interface/icon_theme)
 fontname=$(gconftool  -g /desktop/gnome/interface/font_name)
 wmtheme=$(gconftool -g /apps/metacity/general/theme)
 wmbuttonlayout=$(gconftool -g /apps/metacity/general/button_layout)
-gtkcolors=$(gconftool -g /desktop/gnome/interface/gtk_color_scheme | sort | tr '\n' ',')
+gtkcolors=$(gconftool -g /desktop/gnome/interface/gtk_color_scheme 2>/dev/null | sort | tr '\n' ',')
 cursortheme=$(gconftool -g /desktop/gnome/peripherals/mouse/cursor_theme)
 cursorsize=$(gconftool -g /desktop/gnome/peripherals/mouse/cursor_size)
 notificationtheme=$(gconftool -g /apps/notification-daemon/theme)
@@ -277,7 +282,7 @@ if [ $? -ne 0 ]; then
     message "Rotating theme snapshots"
     rotate_snapshots
 else
-    message "Theme has not changed, ignoring snapshot"
+    message "Theme has not changed. No snapshot taken."
 fi
 
 remove_current_snapshot
