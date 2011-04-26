@@ -1,0 +1,316 @@
+#!/usr/bin/env bash 
+# Author: brx75x 
+# Contacts: find me on gmail
+
+appname="gtk-theme-autosave-simple"
+
+ShortOpts="dhqfs"
+LongOpts="debug,help,quiet,full,simple"
+
+USAGE="Usage: ${appname} [-$ShortOpts] {OPTION...}"
+
+
+opts=$(getopt -o "${ShortOpts}" --long "${LongOpts}" --name "${appname}" -- "${@}")
+
+FULL=0
+
+eval set -- "${opts}"
+
+while [ "${1}" ]; do
+    case "${1}" in
+        --debug|-d)
+            DEBUG=1
+            shift
+            ;;
+
+        --quiet | -q)
+            QUIET=1
+            shift
+            ;;
+        --full | -f)
+            FULL=1
+            shift
+            ;;
+        --simple | -s)
+            FULL=0
+            shift
+            ;;
+        --help | -h)
+            echo "$USAGE"
+            exit 85
+            ;;
+        --)
+            break
+            ;;
+    esac
+done
+
+lockfile="/tmp/$appname-$USER.pid"
+
+localdir="$HOME/.local/share/$appname"
+cachedir="$HOME/.cache/$appname"
+iconthemedir=""
+gtkthemedir=""
+wmthemedir=""
+
+datetag='date +%Y%m%d%H%M'
+
+fullsnap=1
+
+#######################################################################
+# Functions                         
+#######################################################################
+function lock(){
+    debug "(@)" 
+    if [ -e $lockfile ]; then
+        error "Another istance is already running"
+        exit 90
+    else
+        echo $$ > $lockfile
+    fi
+}
+
+function unlock(){
+    rm $lockfile
+}
+
+function lookup_themedir_icon()
+{
+    debug "lookup_themedir_icon($@)"
+    theme="$1"
+    for data_dir in "$HOME/.icons/$theme" "/usr/share/gnome/icons/$theme" "/usr/local/share/icons/$theme" "/usr/share/icons/$theme"; do
+        if [ -f "$data_dir/index.theme" ]; then
+            iconthemedir="$data_dir"
+            debug "lookup_themedir_icon: found theme in '$data_dir'"
+            return
+        fi
+    done
+   warn "lookup_themedir_icon: theme dir not found!'"
+}
+
+function lookup_themedir_gtk()
+{
+    debug "lookup_themedir_gtk($@)"
+    theme="$1"
+    for data_dir in "$HOME/.themes/$theme" "/usr/share/gnome/themes/$theme" "/usr/local/share/themes/$theme" "/usr/share/themes/$theme"; do
+        if [ -f "$data_dir/gtk-2.0/gtkrc" ]; then
+            gtkthemedir="$data_dir"
+            debug "lookup_themedir_gtk: found theme in '$data_dir'"
+            return
+        fi
+    done
+   warn "lookup_themedir_gtk: theme dir not found!'"
+}
+
+function lookup_themedir_wm()
+{
+    debug "lookup_themedir_wm($@)"
+    theme="$1"
+    for data_dir in "$HOME/.themes/$theme" "/usr/share/gnome/themes/$theme" "/usr/local/share/themes/$theme" "/usr/share/themes/$theme"; do
+        #debug "lookup_themedir_wm: $data_dir"
+        if [ -f "$data_dir/metacity-1/metacity-theme-1.xml" ]; then
+            wmthemedir="$data_dir"
+            debug "lookup_themedir_wm: found theme in '$data_dir'"
+            return
+        fi
+    done
+   warn "lookup_themedir_wm: theme dir not found!'"
+}
+
+function generate_gnome_metatheme(){
+    debug "generate_gnome_metatheme($@)"
+    themedir="$1"
+    ddate="$2"
+    mkdir -d "$themedir" 2>/dev/null
+    echo "[Desktop Entry]
+Name=Snapshot $ddate - $gtktheme/$wmtheme/$icontheme/$cursortheme
+Type=X-GNOME-Metatheme
+Comment=Snapshot of theme for user $USER on $ddate
+Encoding=UTF-8
+Version=$ddate
+
+[X-GNOME-Metatheme]
+GtkTheme=$gtktheme
+MetacityTheme=$wmtheme
+IconTheme=$icontheme
+GtkColorScheme=$gtkcolors
+CursorTheme=$cursortheme
+CursorSize=$cursorsize
+NotificationTheme=$notificationtheme
+ButtonLayout=$wmbuttonlayout
+ApplicationFont=$fontname
+BackgroundImage=$backgroundpicture
+" > $themedir/index.theme
+}
+
+function save_gnome_metatheme(){
+    debug "save_gnome_metatheme($@)"
+    outfile="$1"
+
+    mkdir -d $themesnapdir_current 2>/dev/null
+    echo "[Desktop Entry]
+Name=Theme snapshot
+Type=X-GNOME-Metatheme
+Comment=Snapshot of theme
+Encoding=UTF-8
+
+[X-GNOME-Metatheme]
+GtkTheme=$gtktheme
+MetacityTheme=$wmtheme
+IconTheme=$icontheme
+GtkColorScheme=$gtkcolors
+CursorTheme=$cursortheme
+CursorSize=$cursorsize
+NotificationTheme=$notificationtheme
+ButtonLayout=$wmbuttonlayout
+ApplicationFont=$fontname
+BackgroundImage=$backgroundpicture
+" > $themesnapdir_current/$outfile
+}
+
+function debug(){
+  if [ "$DEBUG" ]; then
+      echo "DEBUG [$(date +%Y%m%d-%H%M%S)]:$appname:${LINENO[1]}:${FUNCNAME[1]}: $@" >&2
+  fi
+}
+
+function messaage_date(){
+    date +"%Y/%m/%d %H:%M:%S"
+}
+
+function message(){
+    if [ -z "$QUIET" ]; then
+        echo "$(messaage_date):$appname:INFO:$@"
+    fi
+}
+
+function error(){
+    echo "$(messaage_date):$appname:ERROR:$@" >&2
+}
+
+function warn(){
+    echo "$(messaage_date):$appname:WARNING:$@" 
+}
+
+function rotate_snapshots(){
+  # if there is a last and a current, rotate it down
+  debug "rotate_snapshot($@) {"
+   if [ -f $themesnapdir_last/index.theme ] && [ -f $themesnapdir_current/index.theme ]; then
+       debug "rotate_snapshot: both snapshot-last and snapshot-current existing."
+       themesnapdir_last_real=$(readlink -f $themesnapdir_last)
+       date_theme_last=$(date -r $themesnapdir_last/index.theme +"%Y-%m-%d_%H:%M")
+       debug "rotate_snapshot: moving $themesnapdir_last to $themebasedir/snapshot-$date_theme_last"
+       mv $themesnapdir_last $themebasedir/snapshot-$date_theme_last
+       debug "rotate_snapshot: regenerate gnome meta theme"
+       generate_gnome_metatheme $themebasedir/snapshot-$date_theme_last "$date_theme_last" 
+   fi
+   # if there is a current, rotate it to last
+   if [ -f $themesnapdir_current/index.theme ]; then
+       debug "rotate_snapshot: snapshot-current existing"
+       mkdir -p $themesnapdir_last 2>/dev/null
+       debug "rotate_snapshot: moving 'snapshot-current' to 'snapshot-last'."
+
+       rm -Rf $themesnapdir_last 2>/dev/null
+       mkdir $themesnapdir_last 2>/dev/null
+       mv  $themesnapdir_current/* $themesnapdir_last/
+       mkdir $themesnapdir_current 2>/dev/null
+
+       date_theme=$(date -r $themesnapdir_last/index.theme +"%Y-%m-%d_%H:%M")
+       generate_gnome_metatheme $themesnapdir_last "current" 
+   fi
+}
+
+function compare_snapshots(){
+    debug "compare_snapshots($@)"
+    if [ -e $themesnapdir_current/index.theme.save ] && [ -e $themesnapdir_last/index.theme.save ] ; then
+        diff -qr $themesnapdir_last/index.theme.save $themesnapdir_current/index.theme.save 2>/dev/null
+        ret=$?
+        if [ $ret -ne 0 ]; then 
+            debug "compare_snapshots: diff -qr $themesnapdir_last/$(basename $f) $themesnapdir_current/$(basename $f)"
+            return 1
+        fi
+        else
+            return 2
+        fi
+}
+
+function remove_current_snapshot(){
+    rm -Rf $themesnapdir_current
+}
+
+function dump_gnome_appearence_conf(){
+    debug "dump_gnome_appearence_conf($@)"
+    ddir=$1
+    gconftool --dump /desktop/gnome/background > $ddir/gconf-background.xml
+    gconftool --dump /desktop/gnome/interface > $ddir/gconf-appearence.xml
+}
+
+function dump_wm_conf(){
+    debug "dump_wm_conf($@)"
+    ddir=$1
+    gconftool --dump /apps/metacity/general > $ddir/gconf-metacity.xml
+}
+
+#######################################################################
+
+debug ""
+debug "$(basename $0) $@"
+
+lock
+
+# Theme snapshot directories
+themebasedir=$HOME/.themes
+themesnapdir_current=$themebasedir/snapshot-current
+themesnapdir_last=$themebasedir/snapshot-last
+
+# Init variables
+gtktheme=$(gconftool  -g /desktop/gnome/interface/gtk_theme)
+icontheme=$(gconftool  -g /desktop/gnome/interface/icon_theme)
+fontname=$(gconftool  -g /desktop/gnome/interface/font_name)
+wmtheme=$(gconftool -g /apps/metacity/general/theme)
+wmbuttonlayout=$(gconftool -g /apps/metacity/general/button_layout)
+gtkcolors=$(gconftool -g /desktop/gnome/interface/gtk_color_scheme 2>/dev/null | sort | tr '\n' ',')
+cursortheme=$(gconftool -g /desktop/gnome/peripherals/mouse/cursor_theme)
+cursorsize=$(gconftool -g /desktop/gnome/peripherals/mouse/cursor_size)
+notificationtheme=$(gconftool -g /apps/notification-daemon/theme)
+backgroundpicture=$(gconftool -g /desktop/gnome/background/picture_filename)
+
+# Main workflow
+
+lookup_themedir_icon "$icontheme"
+lookup_themedir_gtk "$gtktheme"
+lookup_themedir_wm "$wmtheme"
+
+mkdir -p $themesnapdir_current 2>/dev/null
+mkdir -p $themesnapdir_last 2>/dev/null
+
+dump_gnome_appearence_conf $themesnapdir_current
+dump_wm_conf $themesnapdir_current
+
+ddate=$(date +"%Y-%m-%d_%H:%M")
+
+save_gnome_metatheme index.theme.save
+generate_gnome_metatheme $themesnapdir_current "$ddate"
+
+compare_snapshots
+ret=$?
+debug "compare_snapshots return $ret"
+
+case "$ret" in 
+    0)
+        message "Theme has not changed. No snapshot taken."
+        returns=0
+        ;;
+    1|2)
+        message "Rotating theme snapshots"
+        rotate_snapshots
+        returns=1
+        ;;
+esac
+
+remove_current_snapshot
+
+unlock
+
+exit $returns
+
