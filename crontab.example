@@ -1,1 +1,3 @@
-*/5 * * * * $HOME/bin/gtk-theme-autosave >> $HOME/.cache/gtk-theme-autosave.log 2>&1
+*/1 * * * * $HOME/bin/gtk-theme-autosave >> $HOME/.cache/gtk-theme-autosave.log 2>&1
+@daily echo "Truncated on $(date)" > $HOME/.cache/gtk-theme-autosave.log 2>&1
+

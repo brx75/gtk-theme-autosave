@@ -4,8 +4,8 @@
 
 appname="gtk-theme-autosave-simple"
 
-ShortOpts="dhqfs"
-LongOpts="debug,help,quiet,full,simple"
+ShortOpts="dhqfst"
+LongOpts="debug,help,quiet,full,simple,test"
 
 USAGE="Usage: ${appname} [-$ShortOpts] {OPTION...}"
 
@@ -13,6 +13,7 @@ USAGE="Usage: ${appname} [-$ShortOpts] {OPTION...}"
 opts=$(getopt -o "${ShortOpts}" --long "${LongOpts}" --name "${appname}" -- "${@}")
 
 FULL=0
+TEST=0
 
 eval set -- "${opts}"
 
@@ -33,6 +34,10 @@ while [ "${1}" ]; do
             ;;
         --simple | -s)
             FULL=0
+            shift
+            ;;
+        --test | -t)
+            TEST=1
             shift
             ;;
         --help | -h)
@@ -200,7 +205,9 @@ function rotate_snapshots(){
        themesnapdir_last_real=$(readlink -f $themesnapdir_last)
        date_theme_last=$(date -r $themesnapdir_last/index.theme +"%Y-%m-%d_%H:%M")
        debug "rotate_snapshot: moving $themesnapdir_last to $themebasedir/snapshot-$date_theme_last"
-       mv $themesnapdir_last $themebasedir/snapshot-$date_theme_last
+       if [ $TEST -eq 0 ]; then
+          mv $themesnapdir_last $themebasedir/snapshot-$date_theme_last
+       fi
        debug "rotate_snapshot: regenerate gnome meta theme"
        generate_gnome_metatheme $themebasedir/snapshot-$date_theme_last "$date_theme_last" 
    fi
@@ -251,6 +258,13 @@ function dump_wm_conf(){
     gconftool --dump /apps/metacity/general > $ddir/gconf-metacity.xml
 }
 
+function dump_gsettings(){
+    debug "dump_gsettings($@)"
+    ddir=$1
+    GSETTINGS_BACKEND=dconf gsettings list-recursively org.gnome.desktop.interface > $ddir/org-gnome-desktop-interface.gsettings
+    GSETTINGS_BACKEND=dconf gsettings list-recursively org.gnome.shell.extensions.user-theme > $ddir/org-gnome-shell-extensions-user-theme.gsettings
+}
+
 #######################################################################
 
 debug ""
@@ -286,6 +300,7 @@ mkdir -p $themesnapdir_last 2>/dev/null
 
 dump_gnome_appearence_conf $themesnapdir_current
 dump_wm_conf $themesnapdir_current
+dump_gsettings $themesnapdir_current
 
 ddate=$(date +"%Y-%m-%d_%H:%M")
 

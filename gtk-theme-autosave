@@ -2,13 +2,49 @@
 # Author: brx75x 
 # Contacts: find me on gmail
 
-
-
-if [ "$1" = "-d" ]; then
-    DEBUG=1
-fi
-
 appname="gtk-theme-autosave"
+
+ShortOpts="dhqfs"
+LongOpts="debug,help,quiet,full,simple"
+
+USAGE="Usage: ${appname} [-$ShortOpts] {OPTION...}"
+
+
+opts=$(getopt -o "${ShortOpts}" --long "${LongOpts}" --name "${appname}" -- "${@}")
+
+FULL=1
+
+eval set -- "${opts}"
+
+while [ "${1}" ]; do
+    case "${1}" in
+        --debug|-d)
+            DEBUG=1
+            shift
+            ;;
+
+        --quiet | -q)
+            QUIET=1
+            shift
+            ;;
+        --full | -f)
+            FULL=1
+            shift
+            ;;
+        --simple | -s)
+            FULL=0
+            shift
+            ;;
+        --help | -h)
+            echo "$USAGE"
+            exit 85
+            ;;
+        --)
+            break
+            ;;
+    esac
+done
+
 lockfile="/tmp/$appname-$USER.pid"
 
 localdir="$HOME/.local/share/$appname"
@@ -28,7 +64,7 @@ function lock(){
     debug "(@)" 
     if [ -e $lockfile ]; then
         error "Another istance is already running"
-        exit 1
+        exit 90
     else
         echo $$ > $lockfile
     fi
@@ -57,7 +93,7 @@ function lookup_themedir_gtk()
     debug "lookup_themedir_gtk($@)"
     theme="$1"
     for data_dir in "$HOME/.themes/$theme" "/usr/share/gnome/themes/$theme" "/usr/local/share/themes/$theme" "/usr/share/themes/$theme"; do
-        if [ -f "$data_dir/index.theme" ]; then
+        if [ -f "$data_dir/gtk-2.0/gtkrc" ]; then
             gtkthemedir="$data_dir"
             debug "lookup_themedir_gtk: found theme in '$data_dir'"
             return
@@ -109,6 +145,8 @@ BackgroundImage=$(basename $themedir)/$(basename $backgroundpicture)
 
 function save_gnome_metatheme(){
     debug "save_gnome_metatheme($@)"
+    outfile="$1"
+
     mkdir -d $themesnapdir_current 2>/dev/null
     echo "[Desktop Entry]
 Name=Theme snapshot
@@ -127,34 +165,36 @@ NotificationTheme=$notificationtheme
 ButtonLayout=$wmbuttonlayout
 ApplicationFont=$fontname
 BackgroundImage=$backgroundpicture
-" > $themesnapdir_current/index.theme.save
+" > $themesnapdir_current/$outfile
 }
 
 function snapshot_themes(){
     debug "snapshot_themes($@)"
     mkdir -p $themesnapdir_current 2>/dev/null
     mkdir -p $themesnapdir_last 2>/dev/null
-
-    # gtk theme and wm theme solid backup
-    for src in "$gtkthemedir/gtk-2.0" "$wmthemedir/metacity-1"; do
-        theme_name=$(basename "$src")
-        debug "'$src' -> '$themesnapdir_current/$theme_name'" 
-        cp -Rf "$src/" "$themesnapdir_current/$theme_name"
-    done
     
-    # Custom GTKrc
-    if [ -f $HOME/.gtkrc-2.0 ]; then
-        cp $HOME/.gtkrc-2.0 $themesnapdir_current/user.gtkrc-2.0
-        grep include $HOME/.gtkrc-2.0 | grep -v ^# | sed 's/include "\(.*\)"/\1/' | while read gtk_include; do
-            cp $HOME/$gtk_include $themesnapdir_current/user.$(basename $gtk_include)
+    if [ $FULL -eq 1 ]; then
+        # gtk theme and wm theme solid backup
+        for src in "$gtkthemedir/gtk-2.0" "$wmthemedir/metacity-1"; do
+            theme_name=$(basename "$src")
+            debug "'$src' -> '$themesnapdir_current/$theme_name'" 
+            cp -Rf "$src/" "$themesnapdir_current/$theme_name"
         done
+        
+        # Custom GTKrc
+        if [ -f $HOME/.gtkrc-2.0 ]; then
+            cp $HOME/.gtkrc-2.0 $themesnapdir_current/user.gtkrc-2.0
+            grep include $HOME/.gtkrc-2.0 | grep -v ^# | sed 's/include "\(.*\)"/\1/' | while read gtk_include; do
+                cp $HOME/$gtk_include $themesnapdir_current/user.$(basename $gtk_include)
+            done
+        fi
+
+        # Background image
+        ln $backgroundpicture $themesnapdir_current/$(basename $backgroundpicture)
     fi
 
-    # Background image
-    ln $backgroundpicture $themesnapdir_current/$(basename $backgroundpicture)
-
     # Save metatheme index.theme
-    save_gnome_metatheme
+    save_gnome_metatheme index.theme.save
 }
 
 function debug(){
@@ -168,7 +208,9 @@ function messaage_date(){
 }
 
 function message(){
-    echo "$(messaage_date):$appname:INFO:$@"
+    if [ -z "$QUIET" ]; then
+        echo "$(messaage_date):$appname:INFO:$@"
+    fi
 }
 
 function error(){
@@ -189,7 +231,7 @@ function rotate_snapshots(){
        debug "rotate_snapshot: moving $themesnapdir_last to $themebasedir/snapshot-$date_theme_last"
        mv $themesnapdir_last $themebasedir/snapshot-$date_theme_last
        debug "rotate_snapshot: regenerate gnome meta theme"
-       generate_gnome_metatheme $themebasedir/snapshot-$date_theme_last "$date_theme_last"
+       generate_gnome_metatheme $themebasedir/snapshot-$date_theme_last "$date_theme_last" 
    fi
    # if there is a current, rotate it to last
    if [ -f $themesnapdir_current/index.theme ]; then
@@ -203,7 +245,7 @@ function rotate_snapshots(){
        mkdir $themesnapdir_current 2>/dev/null
 
        date_theme=$(date -r $themesnapdir_last/index.theme +"%Y-%m-%d_%H:%M")
-       generate_gnome_metatheme $themesnapdir_last "current"
+       generate_gnome_metatheme $themesnapdir_last "current" 
    fi
 }
 
@@ -281,10 +323,15 @@ compare_snapshots
 if [ $? -ne 0 ]; then
     message "Rotating theme snapshots"
     rotate_snapshots
+    returns=1
 else
     message "Theme has not changed. No snapshot taken."
+    returns=0
 fi
 
 remove_current_snapshot
 
 unlock
+
+exit $returns
+
